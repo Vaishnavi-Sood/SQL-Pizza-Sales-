@@ -1,0 +1,104 @@
+/*
+===============================================================================
+VIEW NAME: vw_pizza_sales_analytics
+
+PURPOSE:
+This view provides a fully denormalized, analytics-ready dataset designed
+specifically for Power BI reporting and dashboarding.
+
+DESCRIPTION:
+- Combines store, order, product, pricing, and ingredient cost data
+- Calculates revenue, discounts, ingredient costs, and profit
+- Produces one row per order line item (pizza sold)
+- Optimized for slicing by date, store, city, pizza, size, channel, and payment
+
+BUSINESS QUESTIONS SUPPORTED:
+- What is total revenue, profit, and profit margin?
+- Which pizzas, sizes, and styles generate the most revenue?
+- Which stores and cities are most profitable?
+- How do sales trend over time?
+- How do order channels and payment methods perform?
+
+INTENDED USE:
+- Direct connection to Power BI
+- Single-page executive and analytical dashboards
+- KPI cards, trend charts, and performance breakdown visuals
+
+GRAIN:
+One record per order item per pizza variant per order
+
+AUTHOR:
+[Your Name]
+
+CREATED DATE:
+[YYYY-MM-DD]
+
+===============================================================================
+*/
+
+
+CREATE VIEW vw_pizza_sales_analytics AS
+SELECT
+    -- Store Info
+    s.store_id,
+    s.store_name,
+    s.city,
+    s.opening_date,
+
+    -- Order Info
+    co.order_id,
+    co.order_datetime,
+    CAST(co.order_datetime AS DATE) AS order_date,
+    co.order_channel,
+    co.payment_method,
+
+    -- Product Info
+    pm.pizza_code,
+    pm.pizza_name,
+    pm.pizza_style,
+    pv.pizza_size,
+
+    -- Sales Metrics
+    oi.quantity,
+    pm.base_price,
+    pv.price_multiplier,
+
+    -- Pricing Calculations
+    (pm.base_price * pv.price_multiplier) AS unit_price,
+    (oi.quantity * pm.base_price * pv.price_multiplier) AS gross_sales,
+    oi.discount_applied AS discount_amount,
+    (oi.quantity * pm.base_price * pv.price_multiplier - oi.discount_applied) AS net_sales,
+
+    -- Ingredient Cost Calculation
+    ISNULL(SUM(pr.quantity_required * i.cost_per_unit) * oi.quantity, 0) AS ingredient_cost,
+
+    -- Profit
+    (oi.quantity * pm.base_price * pv.price_multiplier 
+        - oi.discount_applied
+        - ISNULL(SUM(pr.quantity_required * i.cost_per_unit) * oi.quantity, 0)
+    ) AS profit
+
+FROM order_items oi
+JOIN customer_orders co ON oi.order_id = co.order_id
+JOIN stores s ON co.store_id = s.store_id
+JOIN pizza_variants pv ON oi.variant_id = pv.variant_id
+JOIN pizza_menu pm ON pv.pizza_code = pm.pizza_code
+LEFT JOIN pizza_recipe pr ON pm.pizza_code = pr.pizza_code
+LEFT JOIN ingredients i ON pr.ingredient_id = i.ingredient_id
+
+GROUP BY
+    s.store_id, s.store_name, s.city, s.opening_date,
+    co.order_id, co.order_datetime, co.order_channel, co.payment_method,
+    pm.pizza_code, pm.pizza_name, pm.pizza_style,
+    pv.pizza_size,
+    oi.quantity, pm.base_price, pv.price_multiplier, oi.discount_applied;
+
+/*======================================================================================
+QUERY NAME: Select All from vw_pizza_sales_analytics
+
+PURPOSE:
+This query retrieves the complete analytics-ready dataset from the
+vw_pizza_sales_analytics view for reporting and analysis.
+========================================================================================*/
+
+SELECT * FROM vw_pizza_sales_analytics
